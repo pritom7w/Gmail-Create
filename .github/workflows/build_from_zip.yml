@@ -16,15 +16,14 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Create Patcher Script
+    - name: Smart Unzip & Flatten Project Files
       run: |
-        cat << 'EOF' > patcher.py
+        python3 -c "
         import zipfile, os, shutil, glob
-
         zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             z_name = zips[0]
-            print(f"Extracting target ZIP: {z_name}")
+            print(f'Extracting target ZIP: {z_name}')
             with zipfile.ZipFile(z_name, 'r') as z:
                 z.extractall('te')
             os.remove(z_name)
@@ -38,8 +37,9 @@ jobs:
                     else: os.remove(dst)
                 shutil.move(src, dst)
             shutil.rmtree('te', ignore_errors=True)
-            print("Project files successfully flattened.")
+            print('Project files successfully flattened.')
 
+        # Automatically provision missing launcher icons across all mipmap densities
         app_dirs = glob.glob('**/app', recursive=True) or ['.']
         png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82'
         for ad in app_dirs:
@@ -51,27 +51,7 @@ jobs:
                     p = os.path.join(md, ic)
                     if not os.path.exists(p):
                         with open(p, 'wb') as f: f.write(png)
-
-        j_base = glob.glob('**/src/main/java', recursive=True)
-        if j_base:
-            p_dir = os.path.join(j_base[0], 'com/p7m/automator')
-            os.makedirs(os.path.join(p_dir, 'core'), exist_ok=True)
-            os.makedirs(os.path.join(p_dir, 'proxy'), exist_ok=True)
-            os.makedirs(os.path.join(p_dir, 'utils'), exist_ok=True)
-            
-            with open(os.path.join(p_dir, 'core/DeviceProfileManager.kt'), 'w') as f:
-                f.write("package com.p7m.automator.core\nimport kotlin.random.Random\nobject DeviceProfileManager {\n    fun generateRandomId(): String = Random.nextLong(1000000000000000L, 9999999999999999L).toString(16)\n    fun getDeviceInfo(): Map<String, String> = mapOf(\"brand\" to \"google\", \"model\" to \"Pixel 4\", \"androidId\" to generateRandomId())\n}\n")
-
-            with open(os.path.join(p_dir, 'proxy/RequestInterceptor.kt'), 'w') as f:
-                f.write("package com.p7m.automator.proxy\nimport android.webkit.WebResourceResponse\nclass RequestInterceptor {\n    fun intercept(url: String): WebResourceResponse? = null\n}\n")
-
-            with open(os.path.join(p_dir, 'utils/ClearDataUtils.kt'), 'w') as f:
-                f.write("package com.p7m.automator.utils\nimport android.content.Context\nimport java.io.File\nobject ClearDataUtils {\n    fun clearAppData(context: Context) {\n        try {\n            context.cacheDir?.takeIf { it.exists() }?.deleteRecursively()\n            context.filesDir?.takeIf { it.exists() }?.list()?.forEach { File(context.filesDir, it).deleteRecursively() }\n        } catch (e: Exception) { e.printStackTrace() }\n    }\n}\n")
-            print('Successfully patched Kotlin source files.')
-        EOF
-
-    - name: Run Patcher Script
-      run: python3 patcher.py
+        "
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
