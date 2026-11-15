@@ -16,10 +16,10 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip & Flatten Project Files
+    - name: Smart Unzip, Patch & Flatten Project Files
       run: |
         python3 -c "
-        import zipfile, os, shutil
+        import zipfile, os, shutil, glob
         zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             zip_name = zips[0]
@@ -47,6 +47,17 @@ jobs:
         else:
             print('Error: No .zip file found!')
             exit(1)
+
+        # Automatically remove missing launcher icon references from AndroidManifest.xml
+        manifest_files = glob.glob('**/AndroidManifest.xml', recursive=True)
+        for m_path in manifest_files:
+            with open(m_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            content = content.replace('android:icon=\"@mipmap/ic_launcher\"', '')
+            content = content.replace('android:roundIcon=\"@mipmap/ic_launcher_round\"', '')
+            with open(m_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f'Successfully patched manifest icon references in: {m_path}')
         "
 
     - name: Set up JDK 17
@@ -62,7 +73,7 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Build APK with Plain Console Output
+    - name: Build APK with Gradle 8.5
       run: |
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
@@ -70,12 +81,9 @@ jobs:
         
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
-        
-        # Use --console=plain so the exact compilation error is printed clearly
         ./gradlew assembleDebug --stacktrace --console=plain
 
     - name: Upload APK Artifact
-      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: p7m-debug-apk
