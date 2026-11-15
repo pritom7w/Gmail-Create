@@ -1,4 +1,4 @@
-name: Build Android APK (Auto-Patch Edition)
+name: Build Android APK
 
 on:
   push:
@@ -16,11 +16,11 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip, Auto-Patch & Flatten Project Files
+    - name: Create Patcher Script
       run: |
-        python3 -c "
+        cat << 'EOF' > patcher.py
         import zipfile, os, shutil, glob
-        
+
         # 1. Unzip and flatten repository structure
         zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
@@ -49,7 +49,7 @@ jobs:
         else:
             print('WARNING: No .zip file found in root, using existing files.')
 
-        # 2. Automatically provision missing launcher icons across all mipmap densities
+        # 2. Provision missing launcher icons across all mipmap densities
         app_dirs = glob.glob('**/app', recursive=True)
         if not app_dirs:
             app_dirs = ['.']
@@ -67,17 +67,14 @@ jobs:
                         with open(icon_path, 'wb') as f:
                             f.write(transparent_png)
 
-        # 3. Auto-patch Kotlin compilation errors in core utility classes
+        # 3. Patch Kotlin compilation errors in core utility classes
         java_base = glob.glob('**/src/main/java', recursive=True)
         if java_base:
             target_pkg_dir = os.path.join(java_base[0], 'com/p7m/automator')
-            
-            # Ensure directories exist
             os.makedirs(os.path.join(target_pkg_dir, 'core'), exist_ok=True)
             os.makedirs(os.path.join(target_pkg_dir, 'proxy'), exist_ok=True)
             os.makedirs(os.path.join(target_pkg_dir, 'utils'), exist_ok=True)
 
-            # Patch DeviceProfileManager.kt
             with open(os.path.join(target_pkg_dir, 'core/DeviceProfileManager.kt'), 'w') as f:
                 f.write('''package com.p7m.automator.core
 import kotlin.random.Random
@@ -89,15 +86,14 @@ object DeviceProfileManager {
     
     fun getDeviceInfo(): Map<String, String> {
         return mapOf(
-            \"brand\" to \"google\",
-            \"model\" to \"Pixel 4\",
-            \"androidId\" to generateRandomId()
+            "brand" to "google",
+            "model" to "Pixel 4",
+            "androidId" to generateRandomId()
         )
     }
 }
 ''')
 
-            # Patch RequestInterceptor.kt
             with open(os.path.join(target_pkg_dir, 'proxy/RequestInterceptor.kt'), 'w') as f:
                 f.write('''package com.p7m.automator.proxy
 import android.webkit.WebResourceResponse
@@ -109,7 +105,6 @@ class RequestInterceptor {
 }
 ''')
 
-            # Patch ClearDataUtils.kt
             with open(os.path.join(target_pkg_dir, 'utils/ClearDataUtils.kt'), 'w') as f:
                 f.write('''package com.p7m.automator.utils
 import android.content.Context
@@ -136,7 +131,10 @@ object ClearDataUtils {
 }
 ''')
             print('Successfully auto-patched Kotlin source files.')
-        "
+        EOF
+
+    - name: Run Smart Patcher Script
+      run: python3 patcher.py
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
