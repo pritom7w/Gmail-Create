@@ -60,35 +60,13 @@ jobs:
             os.makedirs(os.path.join(p_dir, 'utils'), exist_ok=True)
             
             with open(os.path.join(p_dir, 'core/DeviceProfileManager.kt'), 'w') as f:
-                f.write('''package com.p7m.automator.core
-import kotlin.random.Random
-object DeviceProfileManager {
-    fun generateRandomId(): String = Random.nextLong(1000000000000000L, 9999999999999999L).toString(16)
-    fun getDeviceInfo(): Map<String, String> = mapOf("brand" to "google", "model" to "Pixel 4", "androidId" to generateRandomId())
-}
-''')
+                f.write("package com.p7m.automator.core\nimport kotlin.random.Random\nobject DeviceProfileManager {\n    fun generateRandomId(): String = Random.nextLong(1000000000000000L, 9999999999999999L).toString(16)\n    fun getDeviceInfo(): Map<String, String> = mapOf(\"brand\" to \"google\", \"model\" to \"Pixel 4\", \"androidId\" to generateRandomId())\n}\n")
 
             with open(os.path.join(p_dir, 'proxy/RequestInterceptor.kt'), 'w') as f:
-                f.write('''package com.p7m.automator.proxy
-import android.webkit.WebResourceResponse
-class RequestInterceptor {
-    fun intercept(url: String): WebResourceResponse? = null
-}
-''')
+                f.write("package com.p7m.automator.proxy\nimport android.webkit.WebResourceResponse\nclass RequestInterceptor {\n    fun intercept(url: String): WebResourceResponse? = null\n}\n")
 
             with open(os.path.join(p_dir, 'utils/ClearDataUtils.kt'), 'w') as f:
-                f.write('''package com.p7m.automator.utils
-import android.content.Context
-import java.io.File
-object ClearDataUtils {
-    fun clearAppData(context: Context) {
-        try {
-            context.cacheDir?.takeIf { it.exists() }?.deleteRecursively()
-            context.filesDir?.takeIf { it.exists() }?.list()?.forEach { File(context.filesDir, it).deleteRecursively() }
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-}
-''')
+                f.write("package com.p7m.automator.utils\nimport android.content.Context\nimport java.io.File\nobject ClearDataUtils {\n    fun clearAppData(context: Context) {\n        try {\n            context.cacheDir?.takeIf { it.exists() }?.deleteRecursively()\n            context.filesDir?.takeIf { it.exists() }?.list()?.forEach { File(context.filesDir, it).deleteRecursively() }\n        } catch (e: Exception) { e.printStackTrace() }\n    }\n}\n")
             print('Successfully patched Kotlin source files.')
         EOF
 
