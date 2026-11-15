@@ -26,7 +26,6 @@ jobs:
         unzip -q "$ZIP_FILE" -d project_work
 
         cd project_work
-        # If there is a single top-level folder inside the zip, step into it
         if [ $(ls -A | wc -l) -eq 1 ] && [ -d "$(ls -A)" ]; then
           cd "$(ls -A)"
         fi
@@ -46,7 +45,25 @@ jobs:
         WORK_DIR=$(cat project_work/work_dir.txt)
         cd "$WORK_DIR"
 
-        # 1. Generate settings.gradle if missing
+        # 1. Generate gradle.properties with AndroidX enabled (Fixes the current error)
+        if [ ! -f "gradle.properties" ]; then
+          echo "Creating missing gradle.properties with AndroidX..."
+          cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        EOF
+        else
+          # Ensure AndroidX is turned on if the file already exists
+          if ! grep -q "android.useAndroidX=true" gradle.properties; then
+            echo "android.useAndroidX=true" >> gradle.properties
+          fi
+          if ! grep -q "android.enableJetifier=true" gradle.properties; then
+            echo "android.enableJetifier=true" >> gradle.properties
+          fi
+        fi
+
+        # 2. Generate settings.gradle if missing
         if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
           echo "Creating missing settings.gradle..."
           cat << 'EOF' > settings.gradle
@@ -69,7 +86,7 @@ jobs:
         EOF
         fi
 
-        # 2. Generate root build.gradle if missing
+        # 3. Generate root build.gradle if missing
         if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
           echo "Creating missing root build.gradle..."
           cat << 'EOF' > build.gradle
@@ -80,7 +97,7 @@ jobs:
         EOF
         fi
 
-        # 3. Generate app/build.gradle if missing
+        # 4. Generate app/build.gradle if missing
         if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
           echo "Creating missing app/build.gradle..."
           mkdir -p app
@@ -117,7 +134,7 @@ jobs:
         EOF
         fi
 
-        # 4. Generate gradlew wrapper if missing
+        # 5. Generate gradlew wrapper if missing
         if [ ! -f "gradlew" ]; then
           echo "Generating Gradle wrapper..."
           gradle wrapper --gradle-version 8.5
