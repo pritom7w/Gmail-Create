@@ -1,4 +1,4 @@
-name: Build Android APK Fast
+name: Build Android APK
 
 on:
   push:
@@ -16,73 +16,17 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip, Locate & Align Android Project Root
+    - name: Unzip Project Archive
       run: |
-        python3 -c '
-        import zipfile, os, shutil
-
-        zips = [f for f in os.listdir(".") if f.endswith(".zip") or f.endswith(".ZIP")]
-        if zips:
-            zip_name = zips[0]
-            print(f"Found target ZIP: {zip_name}")
-            with zipfile.ZipFile(zip_name, "r") as z:
-                z.extractall("extracted_temp")
-            os.remove(zip_name)
-            
-            for root, dirs, files in os.walk("extracted_temp"):
-                rel_path = os.path.relpath(root, "extracted_temp")
-                target_base = "." if rel_path == "." else os.path.join(".", rel_path)
-                os.makedirs(target_base, exist_ok=True)
-                for file in files:
-                    src_file = os.path.join(root, file)
-                    dst_file = os.path.join(target_base, file)
-                    if os.path.exists(dst_file):
-                        os.remove(dst_file)
-                    shutil.move(src_file, dst_file)
-            shutil.rmtree("extracted_temp", ignore_errors=True)
-            print("Successfully extracted ZIP contents.")
-
-        project_root = "."
-        for root, dirs, files in os.walk("."):
-            if ".git" in root or ".github" in root:
-                continue
-            if "app" in dirs:
-                project_root = root
-                break
-
-        print(f"Detected Android project root: {project_root}")
-
-        settings_path = os.path.join(project_root, "settings.gradle")
-        if not os.path.exists(settings_path) and not os.path.exists(os.path.join(project_root, "settings.gradle.kts")):
-            with open(settings_path, "w") as f:
-                f.write("""pluginManagement {
-    repositories { google(); mavenCentral(); gradlePluginPortal() }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories { google(); mavenCentral() }
-}
-rootProject.name = "P7M-Suite"
-include ":app"
-""")
-
-        build_path = os.path.join(project_root, "build.gradle")
-        if not os.path.exists(build_path) and not os.path.exists(os.path.join(project_root, "build.gradle.kts")):
-            with open(build_path, "w") as f:
-                f.write("""plugins {
-    id "com.android.application" version "8.2.2" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.22" apply false
-}
-""")
-
-        props_path = os.path.join(project_root, "gradle.properties")
-        if not os.path.exists(props_path):
-            with open(props_path, "w") as f:
-                f.write("android.useAndroidX=true\nandroid.enableJetifier=true\n")
-
-        with open("project_path.txt", "w") as f:
-            f.write(project_root)
-        '
+        ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+        if [ -z "$ZIP_FILE" ]; then
+          echo "Error: No .zip project file found in repository root!"
+          exit 1
+        fi
+        
+        echo "Extracting $ZIP_FILE..."
+        unzip -q "$ZIP_FILE" -d .
+        rm "$ZIP_FILE"
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -90,37 +34,26 @@ include ":app"
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Configure Pre-installed Android SDK
+    - name: Setup Android SDK Environment
       run: |
         echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
         echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Generate Gradle Wrapper & Build APK
+    - name: Build APK with Gradle
       run: |
-        set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
         
-        PROJ_DIR=$(cat project_path.txt)
-        cd "$PROJ_DIR"
-        
+        # Generate wrapper if missing
         gradle wrapper --gradle-version 8.7
         chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace 2>&1 | tee build_output.log
+        ./gradlew assembleDebug --stacktrace
 
-    - name: Upload Success APK Artifact
-      if: success()
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: '**/build/outputs/apk/debug/app-debug.apk'
-
-    - name: Upload Failure Log Artifact
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Failed-Log
-        path: '**/build_output.log'
+        path: app/build/outputs/apk/debug/app-debug.apk
