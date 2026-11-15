@@ -1,4 +1,4 @@
-name: Build Android APK (Kotlin Error Diagnostic)
+name: Build Android APK (Kotlin Diagnostic)
 
 on:
   push:
@@ -79,7 +79,7 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Build APK with Full Compiler Info
+    - name: Build APK & Print Kotlin Compilation Errors
       run: |
         set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
@@ -89,12 +89,12 @@ jobs:
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
         
-        # Run with --info so Kotlin compilation errors print out explicitly
-        ./gradlew assembleDebug --info --stacktrace --console=plain 2>&1 | tee build_output.log || {
+        # Run Gradle with plain console output to capture exact Kotlin compiler diagnostics
+        ./gradlew assembleDebug --console=plain --warning-mode all 2>&1 | tee build_output.log || {
             echo "========================================"
-            echo "BUILD FAILED. PRINTING KOTLIN ERROR TAIL:"
+            echo "BUILD FAILED. PRINTING ERROR HIGHLIGHTS:"
             echo "========================================"
-            tail -n 250 build_output.log
+            grep -C 5 "e: " build_output.log || tail -n 100 build_output.log
             exit 1
         }
 
