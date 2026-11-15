@@ -1,4 +1,4 @@
-name: Build Android APK (Permanent Debug Edition)
+name: Build Android APK (Production Edition)
 
 on:
   push:
@@ -13,8 +13,8 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install Unzip
-      run: sudo apt-get update && sudo apt-get install -y unzip
+    - name: Install Unzip & Build Essentials
+      run: sudo apt-get update && sudo apt-get install -y unzip build-auto
 
     - name: Smart Unzip & Flatten Project Files
       run: |
@@ -73,8 +73,14 @@ jobs:
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
         
-        gradle wrapper --gradle-version 8.5
-        chmod +x gradlew
+        # Ensure gradlew has execution permissions
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+        else
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+        fi
+        
         ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build_output.log
 
     - name: Upload Success APK Artifact
@@ -82,7 +88,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: '**/build/outputs/apk/debug/*.apk'
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          **/build/outputs/apk/debug/*.apk
 
     - name: Upload Failure Log Artifact
       if: failure()
@@ -90,3 +98,4 @@ jobs:
       with:
         name: Failed-Log
         path: build_output.log
+q
