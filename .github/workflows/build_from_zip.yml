@@ -1,4 +1,4 @@
-name: Build APK from Zip Archive
+name: Build Android APK Fast
 
 on:
   push:
@@ -6,33 +6,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-from-zip:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Extract Zip & Inspect Structure
+    - name: Install Unzip
+      run: sudo apt-get update && sudo apt-get install -y unzip
+
+    - name: Detect, Unzip, Patch & Organize Project Files
       run: |
-        ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
-        if [ -z "$ZIP_FILE" ]; then
-          echo "ERROR: No .zip file found in repository root."
-          exit 1
-        fi
+        python3 -c "
+        import zipfile, glob, os, shutil
+        zips = [f for f in os.listdir('.') if f.endswith('.zip')]
+        if zips:
+            zip_name = zips[0]
+            print(f'Found target ZIP: {zip_name}')
+            with zipfile.ZipFile(zip_name, 'r') as z:
+                z.extractall('extracted_temp')
+            os.remove(zip_name)
+            
+            for item in os.listdir('extracted_temp'):
+                if item == '.github':
+                    continue
+                src = os.path.join('extracted_temp', item)
+                dst = os.path.join('.', item)
+                if os.path.exists(dst):
+                    if os.path.isdir(dst): shutil.rmtree(dst)
+                    else: os.remove(dst)
+                shutil.move(src, dst)
+            shutil.rmtree('extracted_temp')
+            print('Successfully extracted and organized ZIP contents.')
+        else:
+            print('WARNING: No .zip file found in root!')
 
-        echo "Extracting $ZIP_FILE..."
-        mkdir -p project_work
-        unzip -q "$ZIP_FILE" -d project_work
-
-        cd project_work
-        if [ $(ls -A | wc -l) -eq 1 ] && [ -d "$(ls -A)" ]; then
-          cd "$(ls -A)"
-        fi
-
-        pwd > ../work_dir.txt
-        echo "=== Extracted Directory Contents ==="
-        ls -la
+        # Dynamically find and patch MainActivity.kt if needed
+        main_files = glob.glob('**/MainActivity.kt', recursive=True)
+        for main_path in main_files:
+            print(f'Found MainActivity at: {main_path}')
+            with open(main_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Ensures proper syntax compatibility for regex strings if present
+            content = content.replace(r'\\.[a-zA-Z]', r'\\\\.[a-zA-Z]')
+            with open(main_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print('Successfully verified and patched MainActivity.kt!')
+        "
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -40,117 +61,34 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Auto-Generate Gradle Wrapper & Configs if Missing
+    - name: Configure Pre-installed Android SDK
       run: |
-        WORK_DIR=$(cat project_work/work_dir.txt)
-        cd "$WORK_DIR"
+        echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-        # 1. Generate gradle.properties with AndroidX enabled (Fixes the current error)
-        if [ ! -f "gradle.properties" ]; then
-          echo "Creating missing gradle.properties with AndroidX..."
-          cat << 'EOF' > gradle.properties
-        android.useAndroidX=true
-        android.enableJetifier=true
-        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-        EOF
-        else
-          # Ensure AndroidX is turned on if the file already exists
-          if ! grep -q "android.useAndroidX=true" gradle.properties; then
-            echo "android.useAndroidX=true" >> gradle.properties
-          fi
-          if ! grep -q "android.enableJetifier=true" gradle.properties; then
-            echo "android.enableJetifier=true" >> gradle.properties
-          fi
-        fi
-
-        # 2. Generate settings.gradle if missing
-        if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-          echo "Creating missing settings.gradle..."
-          cat << 'EOF' > settings.gradle
-        pluginManagement {
-            repositories {
-                google()
-                mavenCentral()
-                gradlePluginPortal()
-            }
-        }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        rootProject.name = "P7M-Suite"
-        include ':app'
-        EOF
-        fi
-
-        # 3. Generate root build.gradle if missing
-        if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
-          echo "Creating missing root build.gradle..."
-          cat << 'EOF' > build.gradle
-        plugins {
-            id 'com.android.application' version '8.2.2' apply false
-            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-        }
-        EOF
-        fi
-
-        # 4. Generate app/build.gradle if missing
-        if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
-          echo "Creating missing app/build.gradle..."
-          mkdir -p app
-          cat << 'EOF' > app/build.gradle
-        plugins {
-            id 'com.android.application'
-            id 'org.jetbrains.kotlin.android'
-        }
-        android {
-            namespace 'com.p7m.automator'
-            compileSdk 34
-            defaultConfig {
-                applicationId "com.p7m.automator"
-                minSdk 26
-                targetSdk 34
-                versionCode 1
-                versionName "1.0"
-            }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions {
-                jvmTarget = '17'
-            }
-        }
-        dependencies {
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
-            implementation 'androidx.webkit:webkit:1.10.0'
-        }
-        EOF
-        fi
-
-        # 5. Generate gradlew wrapper if missing
-        if [ ! -f "gradlew" ]; then
-          echo "Generating Gradle wrapper..."
-          gradle wrapper --gradle-version 8.5
-        fi
-
+    - name: Generate Gradle 8.7 Wrapper & Build APK
+      run: |
+        set -o pipefail
+        export ANDROID_HOME=/usr/local/lib/android/sdk
+        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+        export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
+        
+        gradle wrapper --gradle-version 8.7
         chmod +x gradlew
+        ./gradlew assembleDebug --stacktrace 2>&1 | tee build_output.log
 
-    - name: Build Debug APK
-      run: |
-        WORK_DIR=$(cat project_work/work_dir.txt)
-        cd "$WORK_DIR"
-        ./gradlew assembleDebug --no-daemon --stacktrace
-
-    - name: Upload Compiled APK Artifact
+    - name: Upload Success APK Artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: p7m-suite-debug-apk
-        path: |
-          **/build/outputs/apk/debug/app-debug.apk
+        name: app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Upload Failure Log Artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Failed-Log
+        path: build_output.log
