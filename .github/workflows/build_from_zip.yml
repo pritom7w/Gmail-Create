@@ -62,23 +62,28 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Generate Gradle 8.5 Wrapper & Build APK
+    - name: Build APK & Capture Full Log
       run: |
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
         
-        # 1. Generate the Gradle wrapper first so 'gradlew' is created
         gradle wrapper --gradle-version 8.5
-        
-        # 2. Now grant permissions to the newly created wrapper
         chmod +x gradlew
         
-        # 3. Compile the debug APK
-        ./gradlew assembleDebug --stacktrace
+        # Run Gradle and capture output to log file while printing to console
+        ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build_output.log
 
-    - name: Upload APK Artifact
+    - name: Upload Success APK Artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Upload Failure Log Artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Failed-Build-Log
+        path: build_output.log
