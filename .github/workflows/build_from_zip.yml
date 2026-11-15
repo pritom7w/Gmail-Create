@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Permanent Debug Edition)
 
 on:
   push:
@@ -86,17 +86,27 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Build APK with Gradle 8.5
+    - name: Build APK & Capture Log
       run: |
+        set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
+        
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace --console=plain
+        ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build_output.log
 
-    - name: Upload APK Artifact
+    - name: Upload Success APK Artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: '**/build/outputs/apk/debug/*.apk'
+
+    - name: Upload Failure Log Artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Failed-Log
+        path: build_output.log
