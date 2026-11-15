@@ -28,14 +28,12 @@ jobs:
                 z.extractall('temp_extracted')
             os.remove(zip_name)
             
-            # If zip contains a single root folder, unwrap it to root
             items = os.listdir('temp_extracted')
             if len(items) == 1 and os.path.isdir(os.path.join('temp_extracted', items[0])):
                 source_dir = os.path.join('temp_extracted', items[0])
             else:
                 source_dir = 'temp_extracted'
                 
-            # Move all project contents directly to current root (.)
             for item in os.listdir(source_dir):
                 if item == '.github': continue
                 src_path = os.path.join(source_dir, item)
@@ -64,25 +62,19 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Force Gradle 8.5 Wrapper & Build APK
+    - name: Generate Gradle 8.5 Wrapper & Build APK
       run: |
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
         
-        # Create Gradle 8.5 wrapper configuration
-        mkdir -p gradle/wrapper
-        cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
-        distributionBase=GRADLE_USER_HOME
-        distributionPath=wrapper/dists
-        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-        networkTimeout=10000
-        validateDistributionUrl=true
-        zipStoreBase=GRADLE_USER_HOME
-        zipStorePath=wrapper/dists
-        EOF
-
+        # 1. Generate the Gradle wrapper first so 'gradlew' is created
+        gradle wrapper --gradle-version 8.5
+        
+        # 2. Now grant permissions to the newly created wrapper
         chmod +x gradlew
+        
+        # 3. Compile the debug APK
         ./gradlew assembleDebug --stacktrace
 
     - name: Upload APK Artifact
