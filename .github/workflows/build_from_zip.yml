@@ -13,30 +13,27 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Locate and Extract Zip Archive
+    - name: Extract Zip & Inspect Structure
       run: |
-        echo "Scanning repository for project zip file..."
         ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
-        
         if [ -z "$ZIP_FILE" ]; then
-          echo "Error: No .zip project file found in the repository root!"
+          echo "ERROR: No .zip file found in repository root."
           exit 1
         fi
-        
-        echo "Found archive: $ZIP_FILE. Extracting..."
-        mkdir -p extracted_project
-        unzip -q "$ZIP_FILE" -d extracted_project
-        
-        cd extracted_project
-        ITEM_COUNT=$(ls -A | wc -l)
-        if [ "$ITEM_COUNT" -eq 1 ] && [ -d "$(ls -A)" ]; then
-          SINGLE_DIR=$(ls -A)
-          echo "Entering root folder inside zip: $SINGLE_DIR"
-          cd "$SINGLE_DIR"
+
+        echo "Extracting $ZIP_FILE..."
+        mkdir -p project_work
+        unzip -q "$ZIP_FILE" -d project_work
+
+        cd project_work
+        # If there is a single top-level folder inside the zip, step into it
+        if [ $(ls -A | wc -l) -eq 1 ] && [ -d "$(ls -A)" ]; then
+          cd "$(ls -A)"
         fi
-        
-        pwd > ../workspace_path.txt
-        echo "Project root successfully located at: $(cat ../workspace_path.txt)"
+
+        pwd > ../work_dir.txt
+        echo "=== Extracted Directory Contents ==="
+        ls -la
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -44,26 +41,95 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        cmdline-tools-version: "11076708"
-
-    - name: Grant Gradle Wrapper Permissions & Build APK
+    - name: Auto-Generate Gradle Wrapper & Configs if Missing
       run: |
-        WORK_DIR=$(cat workspace_path.txt)
+        WORK_DIR=$(cat project_work/work_dir.txt)
         cd "$WORK_DIR"
-        
-        if [ ! -f "gradlew" ]; then
-          echo "Error: gradlew not found in $WORK_DIR. Make sure your zip includes the Android project root files."
-          exit 1
+
+        # 1. Generate settings.gradle if missing
+        if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+          echo "Creating missing settings.gradle..."
+          cat << 'EOF' > settings.gradle
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "P7M-Suite"
+        include ':app'
+        EOF
         fi
-        
-        echo "Granting execution permissions to Gradle wrapper..."
+
+        # 2. Generate root build.gradle if missing
+        if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+          echo "Creating missing root build.gradle..."
+          cat << 'EOF' > build.gradle
+        plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+        }
+        EOF
+        fi
+
+        # 3. Generate app/build.gradle if missing
+        if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
+          echo "Creating missing app/build.gradle..."
+          mkdir -p app
+          cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
+        android {
+            namespace 'com.p7m.automator'
+            compileSdk 34
+            defaultConfig {
+                applicationId "com.p7m.automator"
+                minSdk 26
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            kotlinOptions {
+                jvmTarget = '17'
+            }
+        }
+        dependencies {
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
+            implementation 'androidx.webkit:webkit:1.10.0'
+        }
+        EOF
+        fi
+
+        # 4. Generate gradlew wrapper if missing
+        if [ ! -f "gradlew" ]; then
+          echo "Generating Gradle wrapper..."
+          gradle wrapper --gradle-version 8.5
+        fi
+
         chmod +x gradlew
-        
-        echo "Executing Gradle build (assembleDebug)..."
-        ./gradlew assembleDebug --no-daemon
+
+    - name: Build Debug APK
+      run: |
+        WORK_DIR=$(cat project_work/work_dir.txt)
+        cd "$WORK_DIR"
+        ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload Compiled APK Artifact
       uses: actions/upload-artifact@v4
