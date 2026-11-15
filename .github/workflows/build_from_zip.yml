@@ -16,7 +16,6 @@ jobs:
     - name: Locate and Extract Zip Archive
       run: |
         echo "Scanning repository for project zip file..."
-        # Find any zip file in the root directory (ignoring case and spaces)
         ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
         
         if [ -z "$ZIP_FILE" ]; then
@@ -29,7 +28,6 @@ jobs:
         unzip -q "$ZIP_FILE" -d extracted_project
         
         cd extracted_project
-        # Check if the zip compressed a single root folder or raw files
         ITEM_COUNT=$(ls -A | wc -l)
         if [ "$ITEM_COUNT" -eq 1 ] && [ -d "$(ls -A)" ]; then
           SINGLE_DIR=$(ls -A)
@@ -48,6 +46,11 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      with:
+        cmdline-tools-version: "11076708"
+        build-tools-version: "34.0.0"
+        api-levels: "34"
+        accept-android-sdk-licenses: true
 
     - name: Grant Gradle Wrapper Permissions & Build APK
       run: |
@@ -63,7 +66,7 @@ jobs:
         chmod +x gradlew
         
         echo "Executing Gradle build (assembleDebug)..."
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug --no-daemon
 
     - name: Upload Compiled APK Artifact
       uses: actions/upload-artifact@v4
