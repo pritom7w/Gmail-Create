@@ -16,11 +16,12 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Detect, Unzip, Patch & Organize Project Files
+    - name: Detect, Unzip & Locate Android Project Root
       run: |
         python3 -c "
-        import zipfile, glob, os, shutil
-        zips = [f for f in os.listdir('.') if f.endswith('.zip')]
+        import zipfile, os, shutil, glob
+
+        zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             zip_name = zips[0]
             print(f'Found target ZIP: {zip_name}')
@@ -28,31 +29,42 @@ jobs:
                 z.extractall('extracted_temp')
             os.remove(zip_name)
             
-            for item in os.listdir('extracted_temp'):
-                if item == '.github':
-                    continue
-                src = os.path.join('extracted_temp', item)
-                dst = os.path.join('.', item)
-                if os.path.exists(dst):
-                    if os.path.isdir(dst): shutil.rmtree(dst)
-                    else: os.remove(dst)
-                shutil.move(src, dst)
+            extracted_items = os.listdir('extracted_temp')
+            # If zip contains a single root folder, unwrap it cleanly
+            if len(extracted_items) == 1 and os.path.isdir(os.path.join('extracted_temp', extracted_items[0])):
+                inner_dir = os.path.join('extracted_temp', extracted_items[0])
+                for item in os.listdir(inner_dir):
+                    src = os.path.join(inner_dir, item)
+                    dst = os.path.join('.', item)
+                    if os.path.exists(dst):
+                        if os.path.isdir(dst): shutil.rmtree(dst)
+                        else: os.remove(dst)
+                    shutil.move(src, dst)
+            else:
+                for item in extracted_items:
+                    if item == '.github': continue
+                    src = os.path.join('extracted_temp', item)
+                    dst = os.path.join('.', item)
+                    if os.path.exists(dst):
+                        if os.path.isdir(dst): shutil.rmtree(dst)
+                        else: os.remove(dst)
+                    shutil.move(src, dst)
             shutil.rmtree('extracted_temp')
             print('Successfully extracted and organized ZIP contents.')
         else:
             print('WARNING: No .zip file found in root!')
 
-        # Dynamically find and patch MainActivity.kt if needed
-        main_files = glob.glob('**/MainActivity.kt', recursive=True)
-        for main_path in main_files:
-            print(f'Found MainActivity at: {main_path}')
-            with open(main_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            # Ensures proper syntax compatibility for regex strings if present
-            content = content.replace(r'\\.[a-zA-Z]', r'\\\\.[a-zA-Z]')
-            with open(main_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print('Successfully verified and patched MainActivity.kt!')
+        # Automatically find the directory containing 'app' folder or settings.gradle
+        project_root = '.'
+        if not os.path.exists('settings.gradle') and not os.path.exists('build.gradle'):
+            for root, dirs, files in os.walk('.'):
+                if 'app' in dirs or 'settings.gradle' in files or 'build.gradle' in files:
+                    project_root = root
+                    break
+
+        print(f'Android project root located at: {project_root}')
+        with open('project_path.txt', 'w') as f:
+            f.write(project_root)
         "
 
     - name: Set up JDK 17
@@ -75,6 +87,28 @@ jobs:
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
         
+        PROJ_DIR=$(cat project_path.txt)
+        cd "$PROJ_DIR"
+        
+        # Ensure Gradle project configuration files exist
+        if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+          echo "include ':app'" > settings.gradle
+        fi
+        
+        if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+          cat << 'EOF' > build.gradle
+        plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+        }
+        EOF
+        fi
+
+        if [ ! -f "gradle.properties" ]; then
+          echo "android.useAndroidX=true" > gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+        fi
+
         gradle wrapper --gradle-version 8.7
         chmod +x gradlew
         ./gradlew assembleDebug --stacktrace 2>&1 | tee build_output.log
@@ -84,11 +118,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: '**/build/outputs/apk/debug/app-debug.apk'
 
     - name: Upload Failure Log Artifact
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: Failed-Log
-        path: build_output.log
+        path: '**/build_output.log'
