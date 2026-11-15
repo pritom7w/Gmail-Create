@@ -16,44 +16,84 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip, Auto-Patch & Flatten
+    - name: Create Patcher Script
       run: |
-        python3 -c '
+        cat << 'EOF' > patcher.py
         import zipfile, os, shutil, glob
-        zips = [f for f in os.listdir(".") if f.endswith(".zip") or f.endswith(".ZIP")]
+
+        zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             z_name = zips[0]
-            with zipfile.ZipFile(z_name, "r") as z: z.extractall("te")
+            print(f"Extracting target ZIP: {z_name}")
+            with zipfile.ZipFile(z_name, 'r') as z:
+                z.extractall('te')
             os.remove(z_name)
-            items = os.listdir("te")
-            s_dir = os.path.join("te", items[0]) if len(items) == 1 and os.path.isdir(os.path.join("te", items[0])) else "te"
+            items = os.listdir('te')
+            s_dir = os.path.join('te', items[0]) if len(items) == 1 and os.path.isdir(os.path.join('te', items[0])) else 'te'
             for item in os.listdir(s_dir):
-                if item == ".github": continue
-                src, dst = os.path.join(s_dir, item), os.path.join(".", item)
+                if item == '.github': continue
+                src, dst = os.path.join(s_dir, item), os.path.join('.', item)
                 if os.path.exists(dst):
                     if os.path.isdir(dst): shutil.rmtree(dst)
                     else: os.remove(dst)
                 shutil.move(src, dst)
-            shutil.rmtree("te", ignore_errors=True)
-        app_dirs = glob.glob("**/app", recursive=True) or ["."]
-        png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
+            shutil.rmtree('te', ignore_errors=True)
+            print("Project files successfully flattened.")
+
+        app_dirs = glob.glob('**/app', recursive=True) or ['.']
+        png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82'
         for ad in app_dirs:
-            rd = os.path.join(ad, "src/main/res") if os.path.exists(os.path.join(ad, "src/main/res")) else os.path.join(ad, "res")
-            for d in ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]:
-                md = os.path.join(rd, f"mipmap-{d}")
+            rd = os.path.join(ad, 'src/main/res') if os.path.exists(os.path.join(ad, 'src/main/res')) else os.path.join(ad, 'res')
+            for d in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']:
+                md = os.path.join(rd, f'mipmap-{d}')
                 os.makedirs(md, exist_ok=True)
-                for ic in ["ic_launcher.png", "ic_launcher_round.png"]:
+                for ic in ['ic_launcher.png', 'ic_launcher_round.png']:
                     p = os.path.join(md, ic)
-                    if not os.path.exists(p): open(p, "wb").write(png)
-        j_base = glob.glob("**/src/main/java", recursive=True)
+                    if not os.path.exists(p):
+                        with open(p, 'wb') as f: f.write(png)
+
+        j_base = glob.glob('**/src/main/java', recursive=True)
         if j_base:
-            p_dir = os.path.join(j_base[0], "com/p7m/automator")
-            os.makedirs(os.path.join(p_dir, "core"), exist_ok=True)
-            os.makedirs(os.path.join(p_dir, "proxy"), exist_ok=True)
-            os.makedirs(os.path.join(p_dir, "utils"), exist_ok=True)
-            open(os.path.join(p_dir, "core/DeviceProfileManager.kt"), "w").write("package com.p7m.automator.core\nimport kotlin.random.Random\nobject DeviceProfileManager {\n    fun generateRandomId(): String = Random.nextLong(1000000000000000L, 9999999999999999L).toString(16)\n    fun getDeviceInfo(): Map<String, String> = mapOf(\"brand\" to \"google\", \"model\" to \"Pixel 4\", \"androidId\" to generateRandomId())\n}\n")
-            open(os.path.join(p_dir, "proxy/RequestInterceptor.kt"), "w").write("package com.p7m.automator.proxy\nimport android.webkit.WebResourceResponse\nclass RequestInterceptor {\n    fun intercept(url: String): WebResourceResponse? = null\n}\n")
-            open(os.path.join(p_dir, "utils/ClearDataUtils.kt"), "w").write("package com.p7m.automator.utils\nimport android.content.Context\nimport java.io.File\nobject ClearDataUtils {\n    fun clearAppData(context: Context) {\n        try {\n            context.cacheDir?.takeIf { it.exists() }?.deleteRecursively()\n            context.filesDir?.takeIf { it.exists() }?.list()?.forEach { File(context.filesDir, it).deleteRecursively() }\n        } catch (e: Exception) { e.printStackTrace() }\n    }\n}\n')
+            p_dir = os.path.join(j_base[0], 'com/p7m/automator')
+            os.makedirs(os.path.join(p_dir, 'core'), exist_ok=True)
+            os.makedirs(os.path.join(p_dir, 'proxy'), exist_ok=True)
+            os.makedirs(os.path.join(p_dir, 'utils'), exist_ok=True)
+            
+            with open(os.path.join(p_dir, 'core/DeviceProfileManager.kt'), 'w') as f:
+                f.write('''package com.p7m.automator.core
+import kotlin.random.Random
+object DeviceProfileManager {
+    fun generateRandomId(): String = Random.nextLong(1000000000000000L, 9999999999999999L).toString(16)
+    fun getDeviceInfo(): Map<String, String> = mapOf("brand" to "google", "model" to "Pixel 4", "androidId" to generateRandomId())
+}
+''')
+
+            with open(os.path.join(p_dir, 'proxy/RequestInterceptor.kt'), 'w') as f:
+                f.write('''package com.p7m.automator.proxy
+import android.webkit.WebResourceResponse
+class RequestInterceptor {
+    fun intercept(url: String): WebResourceResponse? = null
+}
+''')
+
+            with open(os.path.join(p_dir, 'utils/ClearDataUtils.kt'), 'w') as f:
+                f.write('''package com.p7m.automator.utils
+import android.content.Context
+import java.io.File
+object ClearDataUtils {
+    fun clearAppData(context: Context) {
+        try {
+            context.cacheDir?.takeIf { it.exists() }?.deleteRecursively()
+            context.filesDir?.takeIf { it.exists() }?.list()?.forEach { File(context.filesDir, it).deleteRecursively() }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+}
+''')
+            print('Successfully patched Kotlin source files.')
+        EOF
+
+    - name: Run Patcher Script
+      run: python3 patcher.py
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -70,11 +110,9 @@ jobs:
 
     - name: Build APK with Gradle 8.5
       run: |
-        set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
-        
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
         ./gradlew assembleDebug --stacktrace --console=plain
