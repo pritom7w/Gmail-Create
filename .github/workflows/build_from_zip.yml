@@ -1,4 +1,4 @@
-name: Build Android APK with Failure Log
+name: Build Android APK with Full Log Capture
 
 on:
   push:
@@ -16,10 +16,12 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip, Patch & Flatten Project Files
+    - name: Smart Unzip, Auto-Icon Provisioning & Flattening
       run: |
         python3 -c "
         import zipfile, os, shutil, glob
+        
+        # 1. Unzip and flatten project files
         zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             zip_name = zips[0]
@@ -48,16 +50,24 @@ jobs:
             print('Error: No .zip file found!')
             exit(1)
 
-        # Automatically remove missing launcher icon references from AndroidManifest.xml
-        manifest_files = glob.glob('**/AndroidManifest.xml', recursive=True)
-        for m_path in manifest_files:
-            with open(m_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = content.replace('android:icon=\"@mipmap/ic_launcher\"', '')
-            content = content.replace('android:roundIcon=\"@mipmap/ic_launcher_round\"', '')
-            with open(m_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f'Successfully patched manifest icon references in: {m_path}')
+        # 2. Automatically generate placeholder launcher icons to prevent AAPT resource linking errors
+        res_dirs = glob.glob('**/src/main/res', recursive=True)
+        if not res_dirs:
+            os.makedirs('app/src/main/res/mipmap-mdpi', exist_ok=True)
+            res_dirs = ['app/src/main/res']
+
+        transparent_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        for r_dir in res_dirs:
+            for folder in ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi']:
+                m_path = os.path.join(r_dir, folder)
+                os.makedirs(m_path, exist_ok=True)
+                for icon in ['ic_launcher.png', 'ic_launcher_round.png']:
+                    icon_path = os.path.join(m_path, icon)
+                    if not os.path.exists(icon_path):
+                        with open(icon_path, 'wb') as f:
+                            f.write(transparent_png)
+        print('Successfully verified and provisioned all missing launcher icons.')
         "
 
     - name: Set up JDK 17
@@ -73,7 +83,7 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Build APK & Capture Log
+    - name: Build APK & Capture Comprehensive Failure Log
       run: |
         set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
@@ -82,7 +92,9 @@ jobs:
         
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace 2>&1 | tee build_output.log
+        
+        # Execute build and capture every single log line into build_output.log
+        ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build_output.log
 
     - name: Upload Success APK Artifact
       if: success()
