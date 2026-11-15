@@ -48,9 +48,6 @@ jobs:
       uses: android-actions/setup-android@v3
       with:
         cmdline-tools-version: "11076708"
-        build-tools-version: "34.0.0"
-        api-levels: "34"
-        accept-android-sdk-licenses: true
 
     - name: Grant Gradle Wrapper Permissions & Build APK
       run: |
