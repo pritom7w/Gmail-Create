@@ -1,6 +1,9 @@
 name: Build Android APK with Full Log Capture
 
 on:
+name: Build Android APK (Foolproof Edition)
+
+on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
@@ -16,16 +19,16 @@ jobs:
     - name: Install Unzip
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Smart Unzip, Auto-Icon Provisioning & Flattening
+    - name: Smart Unzip, Flatten & Auto-Provision Assets
       run: |
         python3 -c "
         import zipfile, os, shutil, glob
         
-        # 1. Unzip and flatten project files
+        # 1. Unzip and flatten repository structure
         zips = [f for f in os.listdir('.') if f.endswith('.zip') or f.endswith('.ZIP')]
         if zips:
             zip_name = zips[0]
-            print(f'Extracting {zip_name}...')
+            print(f'Extracting target ZIP: {zip_name}')
             with zipfile.ZipFile(zip_name, 'r') as z:
                 z.extractall('temp_extracted')
             os.remove(zip_name)
@@ -47,27 +50,26 @@ jobs:
             shutil.rmtree('temp_extracted', ignore_errors=True)
             print('Project files successfully flattened to root.')
         else:
-            print('Error: No .zip file found!')
-            exit(1)
+            print('WARNING: No .zip file found in root, using existing files.')
 
-        # 2. Automatically generate placeholder launcher icons to prevent AAPT resource linking errors
-        res_dirs = glob.glob('**/src/main/res', recursive=True)
-        if not res_dirs:
-            os.makedirs('app/src/main/res/mipmap-mdpi', exist_ok=True)
-            res_dirs = ['app/src/main/res']
-
+        # 2. Automatically provision missing launcher icons across all mipmap densities
+        app_dirs = glob.glob('**/app', recursive=True)
+        if not app_dirs:
+            app_dirs = ['.']
+            
         transparent_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82'
         
-        for r_dir in res_dirs:
-            for folder in ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi']:
-                m_path = os.path.join(r_dir, folder)
-                os.makedirs(m_path, exist_ok=True)
+        for a_dir in app_dirs:
+            res_dir = os.path.join(a_dir, 'src/main/res') if os.path.exists(os.path.join(a_dir, 'src/main/res')) else os.path.join(a_dir, 'res')
+            for density in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']:
+                mipmap_dir = os.path.join(res_dir, f'mipmap-{density}')
+                os.makedirs(mipmap_dir, exist_ok=True)
                 for icon in ['ic_launcher.png', 'ic_launcher_round.png']:
-                    icon_path = os.path.join(m_path, icon)
+                    icon_path = os.path.join(mipmap_dir, icon)
                     if not os.path.exists(icon_path):
                         with open(icon_path, 'wb') as f:
                             f.write(transparent_png)
-        print('Successfully verified and provisioned all missing launcher icons.')
+        print('Successfully provisioned placeholder launcher icons.')
         "
 
     - name: Set up JDK 17
@@ -83,7 +85,7 @@ jobs:
         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-    - name: Build APK & Capture Comprehensive Failure Log
+    - name: Build APK & Print Error Summary on Failure
       run: |
         set -o pipefail
         export ANDROID_HOME=/usr/local/lib/android/sdk
@@ -93,15 +95,21 @@ jobs:
         gradle wrapper --gradle-version 8.5
         chmod +x gradlew
         
-        # Execute build and capture every single log line into build_output.log
-        ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build_output.log
+        # Run Gradle and tee output to log file
+        ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build_output.log || {
+            echo "========================================"
+            echo "BUILD FAILED! PRINTING LAST 100 LINES OF LOG:"
+            echo "========================================"
+            tail -n 100 build_output.log
+            exit 1
+        }
 
     - name: Upload Success APK Artifact
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: '**/build/outputs/apk/debug/*.apk'
 
     - name: Upload Failure Log Artifact
       if: failure()
